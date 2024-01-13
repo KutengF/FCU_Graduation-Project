@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LED Status</title>
+    <style>
+        .led {
+            width: 30px;  /* size of the LED */
+            height: 30px; /* of the LED */
+            border-radius: 50%;
+            display: inline-block;
+            margin: 10px; /* spacing between LEDs */
+        }
+        .off {
+            background-color: gray;
+        }
+        .on {
+            background-color: yellow;
+        }
+        .gauge {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: 3px solid black;
+            position: relative;
+            margin: 10px;
+            overflow: hidden;
+        }
+        .gauge .fill {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 0%;
+            border-radius: 50%;
+            background: red; /* Fallback color */
+            background: linear-gradient(to top, red, transparent);
+            transition: height 0.5s;
+        }
+        .gauge.humidity .fill {
+            background: blue; /* Fallback color */
+            background: linear-gradient(to top, blue, transparent);
+        }
+        .gauge .label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="leds">
+        <div class="led off" id="led1" onclick="toggleLED(1)"></div>
+        <div class="led off" id="led2" onclick="toggleLED(2)"></div>
+        <div class="led off" id="led3" onclick="toggleLED(3)"></div>
+        <div class="led off" id="led4" onclick="toggleLED(4)"></div>
+        <div class="led off" id="led5" onclick="toggleLED(5)"></div>
+    </div>
+    <div id="mode">Mode: </div>
+    
+    <div class="gauge temperature">
+        <div class="fill" id="tempFill"></div>
+        <div class="label" id="temperatureLabel"></div>
+    </div>
+    
+    <div class="gauge humidity">
+        <div class="fill" id="humidityFill"></div>
+        <div class="label" id="humidityLabel"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let currentMode = "0";  // start in manual mode
+        let currentTemperature = "00.00";  // initial value
+        let currentHumidity = "00.00";  // initial value
+
+        const socket = io.connect();
+
+        socket.on('updateStatus', function(data) {
+            // Extract data
+            let leds = data.substring(0, 5);
+            currentMode = data[5];
+            currentTemperature = data.substring(6, 11);
+            currentHumidity = data.substring(11, 16);
+            
+            // Update LEDs
+            for(let i=0; i<5; i++) {
+                let ledElement = document.getElementById('led' + (i+1));
+                if (leds[i] === leds[i].toLowerCase()) {
+                    ledElement.className = "led off";
+                } else {
+                    ledElement.className = "led on";
+                }
+            }
+
+            // Update Mode
+            document.getElementById('mode').textContent = "Mode: " + (currentMode === '0' ? "Manual Mode" : "Auto Mode");
+
+            // Update Temperature and Humidity Gauges
+            document.getElementById('tempFill').style.height = `${parseFloat(currentTemperature)}%`;
+            document.getElementById('temperatureLabel').textContent = `Temperature: ${currentTemperature}°C`;
+            
+            document.getElementById('humidityFill').style.height = `${parseFloat(currentHumidity)}%`;
+            document.getElementById('humidityLabel').textContent = `Humidity: ${currentHumidity}%`;
+        });
+
+        function changeMode() {
+            fetch('/changeMode', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data.message);
+                // Update the mode text content
+                document.getElementById('mode').textContent = "Mode: " + (currentMode === '0' ? "Auto Mode" : "Manual Mode");
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+        }
+
+        function toggleLED(ledNumber) {
+            if (currentMode === '0') { // Only allow toggling in manual mode
+                let ledElement = document.getElementById('led' + ledNumber);
+                let ledState = ledElement.className.includes('off') ? 'on' : 'off';
+                
+                if (ledState === 'on') {
+                    ledElement.className = "led on";
+                } else {
+                    ledElement.className = "led off";
+                }
+                
+                // Construct the updated status string
+                let updatedStatus = "";
+                for(let i=1; i<=5; i++) {
+                    if (i === ledNumber) {
+                        updatedStatus += (ledState === 'on' ? String.fromCharCode(96+i).toUpperCase() : String.fromCharCode(96+i));
+                    } else {
+                        let currentLedElement = document.getElementById('led' + i);
+                        updatedStatus += (currentLedElement.className.includes('off') ? String.fromCharCode(96+i) : String.fromCharCode(96+i).toUpperCase());
+                    }
+                }
+                updatedStatus += currentMode + currentTemperature + currentHumidity;
+
+                // Notify the server about the LED state change
+                socket.emit('update', updatedStatus);
+            }
+        }
+    </script>
+</body>
+</html>
